@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { supabase } from "@/lib/supabase";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+// Guna fallback supaya Vercel tidak panik semasa proses Build
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_dummy', {
   apiVersion: "2025-01-27.acacia",
 });
 
-const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET!;
+const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET || 'whsec_dummy';
 
 export async function POST(req: Request) {
   const payload = await req.text();
@@ -15,22 +16,18 @@ export async function POST(req: Request) {
   let event;
 
   try {
-    // 1. Stripe mengesahkan bahawa mesej ini benar-benar datang dari mereka (bukan hacker)
     event = stripe.webhooks.constructEvent(payload, sig, endpointSecret);
   } catch (err: any) {
     console.error("Webhook Error:", err.message);
     return NextResponse.json({ error: `Webhook Error: ${err.message}` }, { status: 400 });
   }
 
-  // 2. Jika pelanggan BERJAYA BAYAR
   if (event.type === "checkout.session.completed") {
     const session = event.data.object as Stripe.Checkout.Session;
     
-    // Dapatkan ID tempahan yang kita selitkan masa mula-mula hantar ke Stripe
     const bookingId = session.metadata?.bookingId;
 
     if (bookingId) {
-      // 3. Arahkan Supabase untuk tukar status kepada 'paid'
       const { error } = await supabase
         .from("bookings")
         .update({ payment_status: "paid" })
@@ -45,6 +42,5 @@ export async function POST(req: Request) {
     }
   }
 
-  // Wajib beritahu Stripe bahawa kita telah terima mesej mereka dengan selamat
   return NextResponse.json({ received: true });
 }
